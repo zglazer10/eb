@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151820">
+  <meta name="description" content="A live stopwatch counting from October 25, 2026 at 10:00 p.m. Toronto time.">
+  <title>EB · Elapsed time</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, sans-serif;
+      color: #f8f4e9;
+      background: #151820;
+      font-variant-numeric: tabular-nums;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      min-height: 100svh;
+      margin: 0;
+      padding: clamp(16px, 5vw, 48px);
+      display: grid;
+      place-items: center;
+      background: radial-gradient(ellipse at top, #303342, #151820 65%);
+    }
+    main {
+      width: min(100%, 680px);
+      padding: clamp(20px, 6vw, 54px);
+      border: 1px solid #454754;
+      border-radius: 28px;
+      background: #1c1f28;
+      box-shadow: 0 24px 100px #080a1080;
+    }
+    header { border-bottom: 1px solid #454754; padding-bottom: 24px; }
+    .eyebrow, dt {
+      color: #cfbf9e;
+      font-size: .75rem;
+      font-weight: 650;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+    .eyebrow { margin: 0 0 14px; }
+    h1 {
+      margin: 0;
+      font-family: Georgia, serif;
+      font-size: clamp(2.35rem, 8vw, 4.25rem);
+      font-weight: 400;
+      line-height: 1;
+      letter-spacing: -.045em;
+    }
+    .since { margin: 14px 0 0; color: #c2c3ce; line-height: 1.55; }
+    dl {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin: 28px 0 20px;
+    }
+    dl div {
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 8px;
+      padding: 14px 4px;
+      text-align: center;
+      border: 1px solid #454754;
+      border-radius: 14px;
+      background: #252833;
+    }
+    dd { margin: 0; font-size: clamp(1.85rem, 8vw, 4.25rem); line-height: 1; }
+    .clock { margin: 0; color: #cfbf9e; text-align: center; letter-spacing: .1em; }
+    noscript { display: block; margin-top: 20px; text-align: center; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">EB / Stopwatch</p>
+      <h1>Elapsed time</h1>
+      <p class="since">Since <time datetime="2026-10-25T22:00:00-04:00">October 25, 2026 at 10:00 p.m.</time> Toronto time</p>
+    </header>
+    <section role="timer" aria-label="Elapsed time">
+      <dl>
+        <div><dt>Years</dt><dd id="years">00</dd></div>
+        <div><dt>Months</dt><dd id="months">00</dd></div>
+        <div><dt>Days</dt><dd id="days">00</dd></div>
+      </dl>
+      <p class="clock" id="clock" aria-label="0 hours, 0 minutes, 0 seconds">00:00:00</p>
+    </section>
+    <noscript>Enable JavaScript to see the live stopwatch.</noscript>
+  </main>
+  <script>
+    const start = { year: 2026, month: 10, day: 25, hour: 22 };
+    const dayMilliseconds = 86_400_000;
+    const toronto = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Toronto',
+      year: 'numeric', month: 'numeric', day: 'numeric',
+      hour: 'numeric', minute: 'numeric', second: 'numeric', hourCycle: 'h23'
+    });
+
+    function civilParts(instant) {
+      return Object.fromEntries(toronto.formatToParts(instant)
+        .filter(part => part.type !== 'literal')
+        .map(part => [part.type, Number(part.value)]));
+    }
+
+    function civilMilliseconds({ year, month, day, hour, minute = 0, second = 0 }) {
+      return Date.UTC(year, month - 1, day, hour, minute, second);
+    }
+
+    function torontoEvening(civilEvening) {
+      // The same Toronto offset applies at this UTC time and at 10 p.m. local.
+      const offset = civilMilliseconds(civilParts(civilEvening)) - civilEvening;
+      return civilEvening - offset;
+    }
+
+    const startInstant = torontoEvening(civilMilliseconds(start));
+
+    function elapsedAt(now) {
+      if (now < startInstant) return [0, 0, 0, 0, 0, 0];
+
+      const local = civilParts(now);
+      const todayAtStartHour = civilMilliseconds({
+        year: local.year, month: local.month, day: local.day, hour: start.hour
+      });
+      const lastEvening = todayAtStartHour - (local.hour < start.hour ? dayMilliseconds : 0);
+      const date = new Date(lastEvening);
+      let months = (date.getUTCFullYear() - start.year) * 12 + date.getUTCMonth() - (start.month - 1);
+      if (date.getUTCDate() < start.day) months--;
+
+      const lastMonthiversary = Date.UTC(start.year, start.month - 1 + months, start.day, start.hour);
+      const days = (lastEvening - lastMonthiversary) / dayMilliseconds;
+      const seconds = Math.floor((now - torontoEvening(lastEvening)) / 1000);
+      return [
+        Math.floor(months / 12), months % 12, days,
+        Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60
+      ];
+    }
+
+    const [years, months, days, clock] = ['years', 'months', 'days', 'clock']
+      .map(id => document.getElementById(id));
+    const pad = value => String(value).padStart(2, '0');
+
+    function update() {
+      const [y, m, d, h, min, s] = elapsedAt(Date.now());
+      years.textContent = pad(y);
+      months.textContent = pad(m);
+      days.textContent = pad(d);
+      clock.textContent = [h, min, s].map(pad).join(':');
+      clock.setAttribute('aria-label', `${h} hours, ${min} minutes, ${s} seconds`);
+    }
+
+    update();
+    setInterval(update, 250);
+  </script>
+</body>
+</html>
